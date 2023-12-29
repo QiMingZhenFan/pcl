@@ -290,6 +290,7 @@ namespace pcl
         inline void
         setPointRepresentation (const PointRepresentationConstPtr &point_representation)
         {
+          // Q: 这个东西在KDTree中的作用是什么
           point_representation_ = point_representation;
         }
 

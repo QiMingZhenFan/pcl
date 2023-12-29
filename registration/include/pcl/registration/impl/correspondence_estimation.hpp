@@ -152,6 +152,7 @@ pcl::registration::CorrespondenceEstimation<PointSource, PointTarget, Scalar>::d
 
       corr.index_query = *idx;
       corr.index_match = index[0];
+      // 存的是平方距离
       corr.distance = distance[0];
       correspondences[nr_valid_correspondences++] = corr;
     }
@@ -164,6 +165,7 @@ pcl::registration::CorrespondenceEstimation<PointSource, PointTarget, Scalar>::d
     for (std::vector<int>::const_iterator idx = indices_->begin (); idx != indices_->end (); ++idx)
     {
       // Copy the source data to a target PointTarget format so we can search in the tree
+      // 对不同类型点进行内容的复制
       copyPoint (input_->points[*idx], pt);
 
       tree_->nearestKSearch (pt, 1, index, distance);
@@ -216,6 +218,7 @@ pcl::registration::CorrespondenceEstimation<PointSource, PointTarget, Scalar>::d
 
       target_idx = index[0];
 
+      // 这里要求二者互为最近邻
       tree_reciprocal_->nearestKSearch (target_->points[target_idx], 1, index_reciprocal, distance_reciprocal);
       if (distance_reciprocal[0] > max_dist_sqr || *idx != index_reciprocal[0])
         continue;

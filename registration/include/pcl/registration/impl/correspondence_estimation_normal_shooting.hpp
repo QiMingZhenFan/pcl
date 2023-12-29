@@ -82,6 +82,7 @@ pcl::registration::CorrespondenceEstimationNormalShooting<PointSource, PointTarg
     // Iterate over the input set of source indices
     for (std::vector<int>::const_iterator idx_i = indices_->begin (); idx_i != indices_->end (); ++idx_i)
     {
+      // 对source点云中的点找k_个最近邻
       tree_->nearestKSearch (input_->points[*idx_i], k_, nn_indices, nn_dists);
 
       // Among the K nearest neighbours find the one with minimum perpendicular distance to the normal
@@ -99,10 +100,13 @@ pcl::registration::CorrespondenceEstimationNormalShooting<PointSource, PointTarg
         const NormalT &normal = source_normals_->points[*idx_i];
         Eigen::Vector3d N (normal.normal_x, normal.normal_y, normal.normal_z);
         Eigen::Vector3d V (pt.x, pt.y, pt.z);
+        // 叉乘，计算的是点线距离
         Eigen::Vector3d C = N.cross (V);
         
         // Check if we have a better correspondence
+        // 依然是平方距离
         double dist = C.dot (C);
+        // 选一个具有最小平方距离的
         if (dist < min_dist)
         {
           min_dist = dist;
@@ -114,6 +118,7 @@ pcl::registration::CorrespondenceEstimationNormalShooting<PointSource, PointTarg
 
       corr.index_query = *idx_i;
       corr.index_match = nn_indices[min_index];
+      // 这里存的是点对之间的距离，并不是之前算的点到法线的距离
       corr.distance = nn_dists[min_index];//min_dist;
       correspondences[nr_valid_correspondences++] = corr;
     }
@@ -186,6 +191,7 @@ pcl::registration::CorrespondenceEstimationNormalShooting<PointSource, PointTarg
 
   std::vector<int> nn_indices (k_);
   std::vector<float> nn_dists (k_);
+  // 在source中只找一个最近的
   std::vector<int> index_reciprocal (1);
   std::vector<float> distance_reciprocal (1);
 
