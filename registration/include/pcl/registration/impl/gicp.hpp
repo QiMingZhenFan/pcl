@@ -116,12 +116,16 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeCovarian
       }
     
     // Compute the SVD (covariance matrix is symmetric so U = V')
+    // 这里应该是想说U和V相同，而不是U和V^T相同
+    // 对于对称矩阵而言，左右奇异矩阵与特征矩阵三者相同
     Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU);
     cov.setZero ();
     Eigen::Matrix3d U = svd.matrixU ();
     // Reconstitute the covariance matrix with modified singular values using the column     // vectors in V.
     for(int k = 0; k < 3; k++) {
       Eigen::Vector3d col = U.col(k);
+      // 这里让最小特征向量方向的可信度更高
+      // 因此，在取逆求马氏距离时，最小特征方向对应的误差权重会被放大
       double v = 1.; // biggest 2 singular values replaced by 1
       if(k == 2)   // smallest singular value replaced by gicp_epsilon
         v = gicp_epsilon_;
@@ -138,12 +142,15 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeRDerivat
   Eigen::Matrix3d dR_dTheta;
   Eigen::Matrix3d dR_dPsi;
 
+  // 分别是增量的 roll pitch yaw
   double phi = x[3], theta = x[4], psi = x[5];
   
   double cphi = cos(phi), sphi = sin(phi);
   double ctheta = cos(theta), stheta = sin(theta);
   double cpsi = cos(psi), spsi = sin(psi);
       
+  // 下面为旋转矩阵对欧拉角求导,共有27个数
+  // 欧拉角采用Z-Y-X
   dR_dPhi(0,0) = 0.;
   dR_dPhi(1,0) = 0.;
   dR_dPhi(2,0) = 0.;
@@ -180,6 +187,10 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeRDerivat
   dR_dPsi(1,2) = sphi*spsi + cphi*cpsi*stheta;
   dR_dPsi(2,2) = 0.;
       
+  // 这里使用矩阵内积利用了迹的性质
+  // Tr(a^T*M*b) = Tr(M*b*a^T)
+  // M为旋转矩阵对某一欧拉角的求导
+  // 传入的R具体形式即为b*a^T
   g[3] = matricesInnerProd(dR_dPhi, R);
   g[4] = matricesInnerProd(dR_dTheta, R);
   g[5] = matricesInnerProd(dR_dPsi, R);
@@ -204,8 +215,17 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigidTr
   x[0] = transformation_matrix (0,3);
   x[1] = transformation_matrix (1,3);
   x[2] = transformation_matrix (2,3);
+  // Z-Y-X 顺序
+  // transformation_matrix (2,1) = cos(pitch)sin(roll)
+  // transformation_matrix (2,2) = cos(pitch)cos(roll)
+  // x(3) -- roll
   x[3] = atan2 (transformation_matrix (2,1), transformation_matrix (2,2));
+  // transformation_matrix (2,0) = -sin(pitch)
+  // x(4) -- pitch
   x[4] = asin (-transformation_matrix (2,0));
+  // transformation_matrix (1,0) = cos(pitch)sin(yaw)
+  // transformation_matrix (0,0) = cos(yaw)cos(pitch)
+  // x(5) -- yaw
   x[5] = atan2 (transformation_matrix (1,0), transformation_matrix (0,0));
 
   // Set temporary pointers
@@ -215,6 +235,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigidTr
   tmp_idx_tgt_ = &indices_tgt;
 
   // Optimize using forward-difference approximation LM
+  // TODO: 阅读bfgs相关内容
   const double gradient_tol = 1e-2;
   OptimizationFunctorWithIndices functor(this);
   BFGS<OptimizationFunctorWithIndices> bfgs (functor);
@@ -251,12 +272,14 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigidTr
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// 看起来这个函数是根据状态增量重新计算残差
 template <typename PointSource, typename PointTarget> inline double
 pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFunctorWithIndices::operator() (const Vector6d& x)
 {
   Eigen::Matrix4f transformation_matrix = gicp_->base_transformation_;
   gicp_->applyState(transformation_matrix, x);
   double f = 0;
+  // 这里似乎要求tmp_idx_src_和tmp_idx_tgt_具有相同的尺寸
   int m = static_cast<int> (gicp_->tmp_idx_src_->size ());
   for (int i = 0; i < m; ++i)
   {
@@ -268,6 +291,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFun
     // Estimate the distance (cost function)
     // The last coordiante is still guaranteed to be set to 1.0
     Eigen::Vector3d res(pp[0] - p_tgt[0], pp[1] - p_tgt[1], pp[2] - p_tgt[2]);
+    // 使用马氏距离
     Eigen::Vector3d temp (gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]) * res);
     //increment= res'*temp/num_matches = temp'*M*temp/num_matches (we postpone 1/num_matches after the loop closes)
     f+= double(res.transpose() * temp);
@@ -276,6 +300,8 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFun
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// 这个x是一个增量，在对这个增量求导
+// 注意，这个增量是相对与初始值，而不是相对于上次迭代结果
 template <typename PointSource, typename PointTarget> inline void
 pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFunctorWithIndices::df (const Vector6d& x, Vector6d& g)
 {
@@ -304,6 +330,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFun
     // Increment rotation gradient
     pp = gicp_->base_transformation_ * p_src;
     Eigen::Vector3d p_src3 (pp[0], pp[1], pp[2]);
+    // 这里的R不是旋转矩阵，只是一个中间变量
     R+= p_src3 * temp.transpose();
   }
   g.head<3> ()*= 2.0/m;
@@ -317,6 +344,8 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::OptimizationFun
 {
   Eigen::Matrix4f transformation_matrix = gicp_->base_transformation_;
   gicp_->applyState(transformation_matrix, x);
+  // f即为待优化的目标函数值（残差值）
+  // 论文中公式(2)
   f = 0;
   g.setZero ();
   Eigen::Matrix3d R = Eigen::Matrix3d::Zero ();
@@ -356,6 +385,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
   using namespace std;
   // Difference between consecutive transforms
   double delta = 0;
+  // pcl::Registration::align()函数中回调用initCompute()，其中PCLBase<PointSource>::initCompute()会完成indices_变量的赋值
   // Get the size of the target
   const size_t N = indices_->size ();
   // Set the mahalanobis matrices to identity
@@ -391,12 +421,15 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
     for(size_t i = 0; i < 4; i++)
       for(size_t j = 0; j < 4; j++)
         for(size_t k = 0; k < 4; k++)
+          // 这里就是一个普通的矩阵乘法
+          // 生成的是最新的变换矩阵
           transform_R(i,j)+= double(transformation_(i,k)) * double(guess(k,j));
 
     Eigen::Matrix3d R = transform_R.topLeftCorner<3,3> ();
 
     for (size_t i = 0; i < N; i++)
     {
+      // pcl::Registration::align中已经将output设置为source点云
       PointSource query = output[i];
       query.getVector4fMap () = guess * query.getVector4fMap ();
       query.getVector4fMap () = transformation_ * query.getVector4fMap ();
@@ -413,6 +446,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
         Eigen::Matrix3d &C1 = (*input_covariances_)[i];
         Eigen::Matrix3d &C2 = (*target_covariances_)[nn_indices[0]];
         Eigen::Matrix3d &M = mahalanobis_[i];
+        // 这里使用R而非T可能是因为位姿平移量并不影响正态分布
         // M = R*C1
         M = R * C1;
         // temp = M*R' + C2 = R*C1*R' + C2
@@ -432,6 +466,8 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
     //optimization right here
     try
     {
+      // 这里本质上是在调用estimateRigidTransformationBFGS
+      // 种种迹象表明，这里的优化量transformation_只是一个相对变换，是在guess的基础上进行的进一步变换
       rigid_transformation_estimation_(output, source_indices, *target_, target_indices, transformation_);
       /* compute the delta from this iteration */
       delta = 0.;
@@ -442,6 +478,7 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
             ratio = 1./rotation_epsilon_;
           else
             ratio = 1./transformation_epsilon_;
+          // delta这么计算有什么意义吗
           double c_delta = ratio*fabs(previous_transformation_(k,l) - transformation_(k,l));
           if(c_delta > delta)
             delta = c_delta;
@@ -468,6 +505,9 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
   //for some reason the static equivalent methode raises an error
   // final_transformation_.block<3,3> (0,0) = (transformation_.block<3,3> (0,0)) * (guess.block<3,3> (0,0));
   // final_transformation_.block <3, 1> (0, 3) = transformation_.block <3, 1> (0, 3) + guess.rightCols<1>.block <3, 1> (0, 3);
+
+  // 这里最终变换也是不对的
+  // bug fixed in https://github.com/PointCloudLibrary/pcl/pull/989/files#diff-ae0abf283535f23d1cf6012279cf7c95d6ebe62b01feac5e6b8966ab48536dc8R463
   final_transformation_.topLeftCorner (3,3) = previous_transformation_.topLeftCorner (3,3) * guess.topLeftCorner (3,3);
   final_transformation_(0,3) = previous_transformation_(0,3) + guess(0,3);
   final_transformation_(1,3) = previous_transformation_(1,3) + guess(1,3);
@@ -480,11 +520,16 @@ pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTransfor
 template <typename PointSource, typename PointTarget> void
 pcl::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::applyState(Eigen::Matrix4f &t, const Vector6d& x) const
 {
+  // 这里的增量x似乎不满足李群约束，否则平移更新时需要考虑旋转增量对原平移造成的影响
+  // bug fixed in https://github.com/PointCloudLibrary/pcl/pull/5489
+
   // !!! CAUTION Stanford GICP uses the Z Y X euler angles convention
   Eigen::Matrix3f R;
+  // 可以看出(3, 4, 5)分别存的是roll, pitch, yaw
   R = Eigen::AngleAxisf (static_cast<float> (x[5]), Eigen::Vector3f::UnitZ ())
     * Eigen::AngleAxisf (static_cast<float> (x[4]), Eigen::Vector3f::UnitY ())
     * Eigen::AngleAxisf (static_cast<float> (x[3]), Eigen::Vector3f::UnitX ());
+  // 看起来是左扰动模型，扰动在全局系
   t.topLeftCorner<3,3> ().matrix () = R * t.topLeftCorner<3,3> ().matrix ();
   Eigen::Vector4f T (static_cast<float> (x[0]), static_cast<float> (x[1]), static_cast<float> (x[2]), 0.0f);
   t.col (3) += T;

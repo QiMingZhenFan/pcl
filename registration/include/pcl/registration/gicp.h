@@ -317,6 +317,7 @@ namespace pcl
       inline double 
       matricesInnerProd(const Eigen::MatrixXd& mat1, const Eigen::MatrixXd& mat2) const
       {
+        // 总感觉这里是要求了两个矩阵维度相同
         double r = 0.;
         size_t n = mat1.rows();
         // tr(mat1^t.mat2)
