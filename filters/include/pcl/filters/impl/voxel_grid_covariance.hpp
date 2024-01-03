@@ -326,6 +326,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
         voxel_centroids_leaf_indices_.push_back (static_cast<int> (it->first));
 
       // Single pass covariance calculation
+      // 计算错误，参考https://github.com/PointCloudLibrary/pcl/issues/4463
       leaf.cov_ = (leaf.cov_ - 2 * (pt_sum * leaf.mean_.transpose ())) / leaf.nr_points + leaf.mean_ * leaf.mean_.transpose ();
       leaf.cov_ *= (leaf.nr_points - 1.0) / leaf.nr_points;
 
