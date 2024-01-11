@@ -65,6 +65,7 @@ pcl::getMinMax3D (const typename pcl::PointCloud<PointT>::ConstPtr &cloud,
     {
       // Get the distance value
       const uint8_t* pt_data = reinterpret_cast<const uint8_t*> (&cloud->points[i]);
+      // 这意味着这个字段的值只能是float
       memcpy (&distance_value, pt_data + fields[distance_idx].offset, sizeof (float));
 
       if (limit_negative)
@@ -81,6 +82,7 @@ pcl::getMinMax3D (const typename pcl::PointCloud<PointT>::ConstPtr &cloud,
       }
       // Create the point structure and get the min/max
       pcl::Array4fMapConst pt = cloud->points[i].getArray4fMap ();
+      // 每一行的元素都保留最大/最小的
       min_p = min_p.min (pt);
       max_p = max_p.max (pt);
     }
@@ -202,8 +204,8 @@ pcl::getMinMax3D (const typename pcl::PointCloud<PointT>::ConstPtr &cloud,
 
 struct cloud_point_index_idx 
 {
-  unsigned int idx;
-  unsigned int cloud_point_index;
+  unsigned int idx;  // 1d leaf index, start from 0
+  unsigned int cloud_point_index; // point index in cloud
 
   cloud_point_index_idx (unsigned int idx_, unsigned int cloud_point_index_) : idx (idx_), cloud_point_index (cloud_point_index_) {}
   bool operator < (const cloud_point_index_idx &p) const { return (idx < p.idx); }
@@ -223,6 +225,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
   }
 
   // Copy the header (and thus the frame_id) + allocate enough space for points
+  // header在基类的filter函数中处理
   output.height       = 1;                    // downsampling breaks the organized structure
   output.is_dense     = true;                 // we filter out invalid points
 
@@ -238,6 +241,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
   int64_t dy = static_cast<int64_t>((max_p[1] - min_p[1]) * inverse_leaf_size_[1])+1;
   int64_t dz = static_cast<int64_t>((max_p[2] - min_p[2]) * inverse_leaf_size_[2])+1;
 
+  // 这里判断的是int32_t的最大值，理论上应该可以修改成int64_t?
   if ((dx*dy*dz) > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))
   {
     PCL_WARN("[pcl::%s::applyFilter] Leaf size is too small for the input dataset. Integer indices would overflow.", getClassName().c_str());
@@ -254,10 +258,12 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
   max_b_[2] = static_cast<int> (floor (max_p[2] * inverse_leaf_size_[2]));
 
   // Compute the number of divisions needed along all axis
+  // 这里求的是每个维度的box数量
   div_b_ = max_b_ - min_b_ + Eigen::Vector4i::Ones ();
   div_b_[3] = 0;
 
   // Set up the division multiplier
+  // 三维的ID换算成一维的，x轴优先
   divb_mul_ = Eigen::Vector4i (1, div_b_[0], div_b_[0] * div_b_[1], 0);
 
   // Storage for mapping leaf and pointcloud indexes
@@ -303,12 +309,15 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
           continue;
       }
       
+      // 计算和坐标最小的box距离多少个box
       int ijk0 = static_cast<int> (floor (input_->points[*it].x * inverse_leaf_size_[0]) - static_cast<float> (min_b_[0]));
       int ijk1 = static_cast<int> (floor (input_->points[*it].y * inverse_leaf_size_[1]) - static_cast<float> (min_b_[1]));
       int ijk2 = static_cast<int> (floor (input_->points[*it].z * inverse_leaf_size_[2]) - static_cast<float> (min_b_[2]));
 
       // Compute the centroid leaf index
+      // 那么意味着坐标最小的盒子idx是0？
       int idx = ijk0 * divb_mul_[0] + ijk1 * divb_mul_[1] + ijk2 * divb_mul_[2];
+      // 这里index_vector的size与参与计算的点数相同，保存了每个点对应的1d idx
       index_vector.push_back (cloud_point_index_idx (static_cast<unsigned int> (idx), *it));
     }
   }
@@ -339,6 +348,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
 
   // Second pass: sort the index_vector vector using value representing target cell as index
   // in effect all points belonging to the same output cell will be next to each other
+  // 把每个点按对应box的1d idx从小到大排列
   std::sort (index_vector.begin (), index_vector.end (), std::less<cloud_point_index_idx> ());
 
   // Third pass: count output cells
@@ -348,16 +358,21 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
   // first_and_last_indices_vector[i] represents the index in index_vector of the first point in
   // index_vector belonging to the voxel which corresponds to the i-th output point,
   // and of the first point not belonging to.
+  // 因为每个output point都对应一个单独的box，因此这个vector的size和output点云的size相同
+  // 注意存放的pair是这个box内的点集在“index_vector”中的index，前闭后开区间
   std::vector<std::pair<unsigned int, unsigned int> > first_and_last_indices_vector;
   // Worst case size
+  // 最坏的情况就是每个点都对应一个单独的box
   first_and_last_indices_vector.reserve (index_vector.size ());
   while (index < index_vector.size ()) 
   {
     unsigned int i = index + 1;
     while (i < index_vector.size () && index_vector[i].idx == index_vector[index].idx) 
       ++i;
+    // 进到这里的条件是 没点了 或者 遇到非当前box的点（idx不相等）
     if (i - index >= min_points_per_voxel_)
     {
+      // 只保留包含点数大于一定阈值的box
       ++total;
       first_and_last_indices_vector.push_back (std::pair<unsigned int, unsigned int> (index, i));
     }
@@ -370,6 +385,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
   {
     try
     { 
+      // [ATTENTION] 确实，resize只对新增值赋值
       // Resizing won't reset old elements to -1.  If leaf_layout_ has been used previously, it needs to be re-initialized to -1
       uint32_t new_layout_size = div_b_[0]*div_b_[1]*div_b_[2];
       //This is the number of elements that need to be re-initialized to -1
@@ -378,6 +394,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
       {
         leaf_layout_[i] = -1;
       }        
+      // "leaf_layout_"的尺寸和空间中所有box的数量相匹配
       leaf_layout_.resize (new_layout_size, -1);           
     }
     catch (std::bad_alloc&)
@@ -401,6 +418,7 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
 
     // index is centroid final position in resulting PointCloud
     if (save_leaf_layout_)
+      // 这里的"index"标志output点云中的id，建立了1d box index和点index的映射
       leaf_layout_[index_vector[first_index].idx] = index;
 
     //Limit downsampling to coords
@@ -412,6 +430,9 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
         centroid += input_->points[index_vector[li].cloud_point_index].getVector4fMap ();
 
       centroid /= static_cast<float> (last_index - first_index);
+      // 这里会有丢失字段值的风险，抑或是直接使用原output.points[index]的其它字段值
+      // 取决于传入的output原本有没有值
+      // 传入点云一定不与input相同，在基类filter函数中有判断
       output.points[index].getVector4fMap () = centroid;
     }
     else
@@ -422,6 +443,8 @@ pcl::VoxelGrid<PointT>::applyFilter (PointCloud &output)
       for (unsigned int li = first_index; li < last_index; ++li)
         centroid.add (input_->points[index_vector[li].cloud_point_index]);  
 
+      // 如果PointT中有CentroidPoint不支持的字段的话，这些字段值应该是会"untouched"
+      // 因此这一步会保留output.points[index]中原有的这些字段
       centroid.get (output.points[index]);
     }
      

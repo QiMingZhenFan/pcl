@@ -1065,6 +1065,7 @@ namespace pcl
         *
         * If the number of accumulated points is zero, then the point will be
         * left untouched. */
+      //  感觉这里的意思是，传入类型PointOutT如果含有不支持的字段，这些字段就不会被修改
       template <typename PointOutT> void
       get (PointOutT& point) const
       {

@@ -180,6 +180,7 @@ namespace pcl
     }; \
   };
 
+// Q: 这里的data是上面union中的data吗？是什么语法
 #define PCL_ADD_EIGEN_MAPS_POINT4D \
   inline pcl::Vector3fMap getVector3fMap () { return (pcl::Vector3fMap (data)); } \
   inline pcl::Vector3fMapConst getVector3fMap () const { return (pcl::Vector3fMapConst (data)); } \
