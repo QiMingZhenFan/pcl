@@ -194,6 +194,7 @@ namespace pcl
       static void
       convertTransform (const Eigen::Matrix<double, 6, 1> &x, Eigen::Affine3f &trans)
       {
+        // 欧拉角是X-Y-Z顺序，这里和GICP中使用的规定不一样
         trans = Eigen::Translation<float, 3>(float (x (0)), float (x (1)), float (x (2))) *
                 Eigen::AngleAxis<float>(float (x (3)), Eigen::Vector3f::UnitX ()) *
                 Eigen::AngleAxis<float>(float (x (4)), Eigen::Vector3f::UnitY ()) *

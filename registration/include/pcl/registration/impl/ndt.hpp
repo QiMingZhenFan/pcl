@@ -82,6 +82,7 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::computeTransformati
   double gauss_c1, gauss_c2, gauss_d3;
 
   // Initializes the guassian fitting parameters (eq. 6.8) [Magnusson 2009]
+  // Q: 为什么*10，以及为什么是一个定值，该值应该根据voxel不同而不同
   gauss_c1 = 10 * (1 - outlier_ratio_);
   gauss_c2 = outlier_ratio_ / pow (resolution_, 3);
   gauss_d3 = -log (gauss_c2);
@@ -101,12 +102,14 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::computeTransformati
   point_gradient_.block<3, 3>(0, 0).setIdentity ();
   point_hessian_.setZero ();
 
+  // Q: 这里为什么非要是列优先？
   Eigen::Transform<float, 3, Eigen::Affine, Eigen::ColMajor> eig_transformation;
   eig_transformation.matrix () = final_transformation_;
 
   // Convert initial guess matrix to 6 element transformation vector
   Eigen::Matrix<double, 6, 1> p, delta_p, score_gradient;
   Eigen::Vector3f init_translation = eig_transformation.translation ();
+  // X-Y-Z顺序
   Eigen::Vector3f init_rotation = eig_transformation.rotation ().eulerAngles (0, 1, 2);
   p << init_translation (0), init_translation (1), init_translation (2),
   init_rotation (0), init_rotation (1), init_rotation (2);
@@ -134,6 +137,7 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::computeTransformati
 
     if (delta_p_norm == 0 || delta_p_norm != delta_p_norm)
     {
+      // 这里万一并不是所有点都能有得分，该怎么办
       trans_probability_ = score / static_cast<double> (input_->points.size ());
       converged_ = delta_p_norm == delta_p_norm;
       return;
@@ -288,9 +292,13 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::computeAngleDerivat
     h_ang_b2_ << (cx * cy * cz), (-cx * cy * sz), (cx * sy);
     h_ang_b3_ << (sx * cy * cz), (-sx * cy * sz), (sx * sy);
 
+    // 这里第二项论文中错了，论文中是（-sx * sz - cx * sy * cz），这里是对的，详情见：
+    // https://github.com/PointCloudLibrary/pcl/issues/4888
     h_ang_c2_ << (-sx * cz - cx * sy * sz), (sx * sz - cx * sy * cz), 0;
     h_ang_c3_ << (cx * cz - sx * sy * sz), (-sx * sy * cz - cx * sz), 0;
 
+    // 这里d1的最后一项应该是（-sy），详情见：
+    // https://github.com/PointCloudLibrary/pcl/issues/4888
     h_ang_d1_ << (-cy * cz), (cy * sz), (sy);
     h_ang_d2_ << (-sx * sy * cz), (sx * sy * sz), (sx * cy);
     h_ang_d3_ << (cx * sy * cz), (-cx * sy * sz), (-cx * cy);
@@ -357,6 +365,8 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::updateDerivatives (
   // e^(-d_2/2 * (x_k - mu_k)^T Sigma_k^-1 (x_k - mu_k)) Equation 6.9 [Magnusson 2009]
   double e_x_cov_x = exp (-gauss_d2_ * x_trans.dot (c_inv * x_trans) / 2);
   // Calculate probability of transtormed points existance, Equation 6.9 [Magnusson 2009]
+  // Q: 这里的负号应该存在吗
+  // 这里的score_inc最后是作为trans_probability_存在的，这里取负确实是正态分布的概率密度
   double score_inc = -gauss_d1_ * e_x_cov_x;
 
   e_x_cov_x = gauss_d2_ * e_x_cov_x;
@@ -366,6 +376,7 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::updateDerivatives (
     return (0);
 
   // Reusable portion of Equation 6.12 and 6.13 [Magnusson 2009]
+  // 因为上面有负号，因此这里是正的
   e_x_cov_x *= gauss_d1_;
 
 
@@ -600,6 +611,7 @@ pcl::NormalDistributionsTransform<PointSource, PointTarget>::trialValueSelection
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TODO: 学习MT优化算法相关的内容
 template<typename PointSource, typename PointTarget> double
 pcl::NormalDistributionsTransform<PointSource, PointTarget>::computeStepLengthMT (const Eigen::Matrix<double, 6, 1> &x, Eigen::Matrix<double, 6, 1> &step_dir, double step_init, double step_max,
                                                                                   double step_min, double &score, Eigen::Matrix<double, 6, 1> &score_gradient, Eigen::Matrix<double, 6, 6> &hessian,
