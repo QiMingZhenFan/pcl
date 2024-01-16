@@ -140,6 +140,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
       // Get the distance value
       const uint8_t* pt_data = reinterpret_cast<const uint8_t*> (&input_->points[cp]);
       float distance_value = 0;
+      // 与VoxelGrid类似，在根据字段筛选时只支持float类型的字段
       memcpy (&distance_value, pt_data + fields[distance_idx].offset, sizeof (float));
 
       if (filter_limit_negative_)
@@ -151,6 +152,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
       else
       {
         // Use a threshold for cutting out points which are too close/far away
+        // 正常不是negative时，只保留[filter_limit_min_, filter_limit_max_]区间中的点
         if ((distance_value > filter_limit_max_) || (distance_value < filter_limit_min_))
           continue;
       }
@@ -162,6 +164,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
       // Compute the centroid leaf index
       int idx = ijk0 * divb_mul_[0] + ijk1 * divb_mul_[1] + ijk2 * divb_mul_[2];
 
+      // 这里是利用[]特性直接生成了个新的
       Leaf& leaf = leaves_[idx];
       if (leaf.nr_points == 0)
       {
@@ -222,6 +225,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
       int idx = ijk0 * divb_mul_[0] + ijk1 * divb_mul_[1] + ijk2 * divb_mul_[2];
 
       //int idx = (((input_->points[cp].getArray4fmap () * inverse_leaf_size_).template cast<int> ()).matrix () - min_b_).dot (divb_mul_);
+      // 这里是利用[]特性直接生成了个新的
       Leaf& leaf = leaves_[idx];
       if (leaf.nr_points == 0)
       {
@@ -296,6 +300,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
     if (leaf.nr_points >= min_points_per_voxel_)
     {
       if (save_leaf_layout_)
+        //  leaf_layout_建立了 leaf_index 和 输出点index 之间的映射
         leaf_layout_[it->first] = cp++;
 
       output.push_back (PointT ());
@@ -323,6 +328,7 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
 
       // Stores the voxel indice for fast access searching
       if (searchable_)
+        // output点云中点的id --> leaf的index 
         voxel_centroids_leaf_indices_.push_back (static_cast<int> (it->first));
 
       // Single pass covariance calculation
@@ -332,11 +338,13 @@ pcl::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
 
       //Normalize Eigen Val such that max no more than 100x min.
       eigensolver.compute (leaf.cov_);
+      // 特征值是升序排列的
       eigen_val = eigensolver.eigenvalues ().asDiagonal ();
       leaf.evecs_ = eigensolver.eigenvectors ();
 
       if (eigen_val (0, 0) < 0 || eigen_val (1, 1) < 0 || eigen_val (2, 2) <= 0)
       {
+        // 非正定，不使用该voxel
         leaf.nr_points = -1;
         continue;
       }
@@ -430,6 +438,8 @@ pcl::VoxelGridCovariance<PointT>::getDisplayCloud (pcl::PointCloud<PointXYZ>& ce
     if (leaf.nr_points >= min_points_per_voxel_)
     {
       cell_mean = leaf.mean_;
+      // LLT变换可用于模拟生成多元相关性随机变量的生成，详情参考：
+      // https://blog.csdn.net/BeiErGeLaiDe/article/details/125828853
       llt_of_cov.compute (leaf.cov_);
       cholesky_decomp = llt_of_cov.matrixL ();
 

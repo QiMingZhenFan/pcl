@@ -533,6 +533,8 @@ namespace pcl
       PointCloudPtr voxel_centroids_;
 
       /** \brief Indices of leaf structurs associated with each point in \ref voxel_centroids_ (used for searching). */
+      // voxel_id = voxel_centroids_leaf_indices_.at(point_id_in_voxel_centroids_);
+      // voxel_leaf = leaves_.at(voxel_id);
       std::vector<int> voxel_centroids_leaf_indices_;
 
       /** \brief KdTree generated using \ref voxel_centroids_ (used for searching). */
