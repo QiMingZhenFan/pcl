@@ -75,12 +75,15 @@ pcl::NormalSpaceSampling<PointT, NormalT>::applyFilter (PointCloud &output)
   std::vector<int> indices;
   if (keep_organized_)
   {
+    // 必须要保留removed_indices_
     bool temp = extract_removed_indices_;
     extract_removed_indices_ = true;
     applyFilter (indices);
     extract_removed_indices_ = temp;
 
     output = *input_;
+    // 所以keep_organized_的含义就是：
+    // 过滤点的点别删，给赋上一个手工值或者NaN标明即可
     for (int rii = 0; rii < static_cast<int> (removed_indices_->size ()); ++rii)  // rii = removed indices iterator
       output.points[(*removed_indices_)[rii]].x = output.points[(*removed_indices_)[rii]].y = output.points[(*removed_indices_)[rii]].z = user_filter_value_;
     if (!pcl_isfinite (user_filter_value_))
@@ -129,6 +132,14 @@ pcl::NormalSpaceSampling<PointT, NormalT>::findBin (const float *normal, unsigne
 
   // Finding bin number for direction cosine in x direction
   unsigned int k = 0;
+  // 这个for循环退出条件似乎会导致略过一段区间
+  // in the case bin_size = 7
+  //    |----|--|----|
+  //    ^       ^
+  //   (i)    (i+bin_size)
+  //         ^       ^
+  // (max-bin_size) (max_cos)
+  // 此时循环就已经终止了，因此后续区间[i+bin_size, max_cos]则不会被检查
   for (float i = min_cos; (i + bin_size) < (max_cos - bin_size); i += bin_size , k++)
   {
     if (dcos >= i && dcos <= (i+bin_size))
@@ -168,6 +179,9 @@ pcl::NormalSpaceSampling<PointT, NormalT>::findBin (const float *normal, unsigne
   }
   t[2] = k;
 
+  // 这里似乎是Z优先
+  // x每增加1，都要增加yoz平面中的所有bin数量
+  // 同样是把3维index向量，转为1维index
   bin_number = t[0] * (binsy_*binsz_) + t[1] * binsz_ + t[2];
   return bin_number;
 }
@@ -199,6 +213,8 @@ pcl::NormalSpaceSampling<PointT, NormalT>::applyFilter (std::vector<int> &indice
   for (std::vector<int>::const_iterator it = indices_->begin (); it != indices_->end (); ++it)
   {
     unsigned int bin_number = findBin (input_normals_->points[*it].normal, n_bins);
+    // 记录了该bin中包含的点在input_点云中的index
+    // bin_number通过操作把三维index转为了一维index
     normals_hg[bin_number].push_back (*it);
   }
 
@@ -213,8 +229,12 @@ pcl::NormalSpaceSampling<PointT, NormalT>::applyFilter (std::vector<int> &indice
 
     unsigned int j = 0;
     for (std::list<int>::iterator itr = normals_hg[i].begin (); itr != normals_hg[i].end (); itr++, j++)
+      // 感觉这里也没有必要存list::iterator，直接存*itr（即input_点云中的index）就好了？
       random_access[i][j] = itr;
   }
+  // 建立这个映射又有啥用，都已经是一个二维数组了
+  // 是因为用了bitset标识点是否被采样了，bitset是一维的，因此需要把二维量映射到一维中，记录每一行的起始
+  // 用个二维vector，不用bitset就省了这一步了
   std::vector<unsigned int> start_index (normals_hg.size ());
   start_index[0] = 0;
   unsigned int prev_index = start_index[0];
@@ -254,6 +274,7 @@ pcl::NormalSpaceSampling<PointT, NormalT>::applyFilter (std::vector<int> &indice
       if (isEntireBinSampled (is_sampled_flag, start_index[j], static_cast<unsigned int> (normals_hg[j].size ()))) 
         bin_empty_flag.flip (j);
 
+      // 这里的index需要是input_点云中的点id
       unsigned int index = *(random_access[j][random_index]);
       indices[i] = index;
       i++;
