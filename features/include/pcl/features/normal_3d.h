@@ -250,6 +250,7 @@ namespace pcl
           return false;
         }
 
+        // 该函数需要输出四维的平面参数，因此需要使用均值计算d
         // Get the plane normal and surface curvature
         solvePlaneParameters (covariance_matrix_, xyz_centroid_, plane_parameters, curvature);
         return true;
@@ -278,6 +279,7 @@ namespace pcl
           return false;
         }
 
+        // 该函数只需要输出三位法向量，因此只用传入协方差矩阵
         // Get the plane normal and surface curvature
         solvePlaneParameters (covariance_matrix_, nx, ny, nz, curvature);
         return true;

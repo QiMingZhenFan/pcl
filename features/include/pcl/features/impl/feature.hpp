@@ -74,6 +74,7 @@ pcl::solvePlaneParameters (const Eigen::Matrix3f &covariance_matrix,
   EIGEN_ALIGN16 Eigen::Vector3f eigen_vector;
   pcl::eigen33 (covariance_matrix, eigen_value, eigen_vector);
 
+  // eigen_vector就是法向量，即最小特征值对应的特征向量
   nx = eigen_vector [0];
   ny = eigen_vector [1];
   nz = eigen_vector [2];
@@ -81,6 +82,7 @@ pcl::solvePlaneParameters (const Eigen::Matrix3f &covariance_matrix,
   // Compute the curvature surface change
   float eig_sum = covariance_matrix.coeff (0) + covariance_matrix.coeff (4) + covariance_matrix.coeff (8);
   if (eig_sum != 0)
+    // 最小特征值/特征值之和，定义为曲率
     curvature = fabsf (eigen_value / eig_sum);
   else
     curvature = 0;
@@ -143,9 +145,17 @@ pcl::Feature<PointInT, PointOutT>::initCompute ()
     {
       search_parameter_ = search_radius_;
       // Declare the search locator definition
+      // 非静态成员函数指针，定义时必须挂类名ClassName::*p
+      // 非静态成员函数必须要取地址 &ClassName::NonStaticMemberFunc
       int (KdTree::*radiusSearchSurface)(const PointCloudIn &cloud, int index, double radius,
                                          std::vector<int> &k_indices, std::vector<float> &k_distances,
                                          unsigned int max_nn) const = &pcl::search::Search<PointInT>::radiusSearch;
+      // 非静态成员函数指针在使用时必须要明确调用其的对象
+      // A a;
+      // a.*p();
+      // 因此此处绑定时需要额外传入类对象指针（地址）即tree_
+      // 至于为什么使用ref()，则是因为bind()函数参数传入默认为拷贝传入，不修改外部变量的值
+      // 示例参考：https://murphypei.github.io/blog/2019/04/cpp-std-ref
       search_method_surface_ = boost::bind (radiusSearchSurface, boost::ref (tree_), _1, _2, _3, _4, _5, 0);
     }
   }

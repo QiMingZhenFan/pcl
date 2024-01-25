@@ -60,6 +60,7 @@ pcl::computeRoots2 (const Scalar& b, const Scalar& c, Roots& roots)
 template <typename Matrix, typename Roots> inline void
 pcl::computeRoots (const Matrix& m, Roots& roots)
 {
+  // Q: 这里是怎么求解特征值的？
   typedef typename Matrix::Scalar Scalar;
 
   // The characteristic equation is x^3 - c2*x^2 + c1*x - c0 = 0.  The
@@ -247,6 +248,8 @@ pcl::computeCorrespondingEigenVector (const Matrix& mat, const typename Matrix::
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
+// 输出的参数eigenvalue为最小特征值
+// eigenvector为对应的特征向量
 template <typename Matrix, typename Vector> inline void
 pcl::eigen33 (const Matrix& mat, typename Matrix::Scalar& eigenvalue, Vector& eigenvector)
 {
@@ -261,12 +264,18 @@ pcl::eigen33 (const Matrix& mat, typename Matrix::Scalar& eigenvalue, Vector& ei
   Matrix scaledMat = mat / scale;
 
   Vector eigenvalues;
+  // eigenvalues升序排列
   computeRoots (scaledMat, eigenvalues);
 
   eigenvalue = eigenvalues (0) * scale;
 
   scaledMat.diagonal ().array () -= eigenvalues (0);
 
+  // (A-λI)x = 0
+  // 有非零解的话则行列式一定为0，即不满秩
+  // 若秩缺一，则三个行向量中必定存在线性相关的二者x1/x2，此时这两个向量叉乘为0
+  // 因此特征向量选取 x1.cross(x3) 和 x2.cross(x3) 本质上来说没什么区别
+  // Q: 若秩缺2，则特征向量空间会张成一个平面，此时还能使用叉乘吗？
   Vector vec1 = scaledMat.row (0).cross (scaledMat.row (1));
   Vector vec2 = scaledMat.row (0).cross (scaledMat.row (2));
   Vector vec3 = scaledMat.row (1).cross (scaledMat.row (2));
